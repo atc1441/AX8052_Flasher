@@ -1,6 +1,6 @@
 # AX8052 Flasher
 
-Programs the internal flash of an AX8052 from an ESP32-S3. The ESP32-S3 drives the chip's debug port directly: clock, open-drain data, debug enable, and reset. A serial console on the ESP32-S3 reads, writes, erases, unlocks, and sets the debug key. `flash.py` sends a firmware file through that console and checks the read-back.
+Programs the internal flash of an AX8052 from an ESP32-S3. The ESP32-S3 drives the chip's debug port directly: clock, open-drain data, debug enable, and reset. A serial console on the ESP32-S3 reads, writes, erases, unlocks, sets the debug key, and steps the core. `flash.py` is that console from the PC, including a check that a firmware file reads back equal to what was written.
 
 The firmware lives in the AX8052's own flash. These parts have no external SPI flash.
 
@@ -210,21 +210,41 @@ The status byte from that read has bit 1 set and bit 0 clear, and the other repl
 
 `steps` sends `59` (reset held), `5A` (reset released, core stays halted), reads the counter, then repeats `58` (one instruction) and a counter read.
 
-## Firmware files
+## Host tool
 
-`flash.py` runs on Windows and uses only the Python standard library. It clears DTR and RTS, unlocks, writes the file in chunks of 128 bytes, reads it back, and compares every byte.
+`flash.py` is the console, run from Windows. It uses only the Python standard library and keeps DTR and RTS off. The first argument is the serial port of the ESP32-S3. The second is the command.
 
 ```
-python flash.py COM5 firmware.bin
+python flash.py COM5 help
+python flash.py COM5 pins
+python flash.py COM5 unlock
+python flash.py COM5 status
+python flash.py COM5 key FFFFFFFFFFFFFFFF
+python flash.py COM5 setkey FFFFFFFFFFFFFFFF
+python flash.py COM5 read 0 40
+python flash.py COM5 read 0 8000 --out firmware.bin
+python flash.py COM5 dump FC00 400
+python flash.py COM5 write 0 00000000
+python flash.py COM5 flash firmware.bin
+python flash.py COM5 flash firmware.bin --addr 0x200 --steps 4
+python flash.py COM5 erase
+python flash.py COM5 pc
+python flash.py COM5 reset
+python flash.py COM5 step
+python flash.py COM5 steps 4
+```
+
+`read` and `dump` take a hex address and a hex length, the same way the console does. `read 0 40` fetches 64 bytes. `--out` stores those bytes. `write` programs one chunk: even hex address, even number of hex digits, at most 128 bytes, below `FC00`. `flash` splits a file into those chunks, reads it back, and compares every byte. An odd file length is padded with `FF`. `--addr` on `flash` is decimal or `0x` hex. `--steps` is a decimal count from 1 to 16. The script sends the hex count the console expects.
+
+A file name in the command position is the same as `flash`:
+
+```
 python flash.py COM5 firmware.bin --addr 0x200
-python flash.py COM5 firmware.bin --steps 4
 ```
 
-`--addr` is the start address, even, decimal or `0x` hex. The default is 0. An odd length is padded with `FF` for the transfer. An empty file, an odd address, or a file that would reach `FC00` is rejected. `--steps` from 1 to 16 runs the core after the compare succeeds. The console takes that count in hex, and the script sends it that way.
+If the chip already holds a 0 where the file needs a 1, the compare fails. Erase, then flash the file again. Erase also returns the debug key to the factory value.
 
-If the chip already holds a 0 where the file needs a 1, the compare fails. Erase, then write the file again. Erase also returns the debug key to the factory value.
-
-The same write can be typed by hand: `write 0000 00000000`, then `read 0000 4`.
+`loop`, `bits`, `bitsod`, `wire5`, `wire6`, `trace`, `sense`, and `scan` are the wire checks from the console.
 
 ## Building the ESP32 firmware
 
